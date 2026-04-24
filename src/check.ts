@@ -1,4 +1,4 @@
-import { chromium, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from 'playwright';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,6 +22,7 @@ function twoMonthsFromNow(): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 const ALERT_BEFORE = process.env.ALERT_BEFORE || twoMonthsFromNow();  // YYYYMMDD
+
 const DEBUG = process.env.DEBUG === 'true';
 const STATE_FILE = path.resolve(process.cwd(), 'data', 'state.json');
 const LOG_FILE = path.resolve(process.cwd(), 'output', 'kawasaki.log');
@@ -32,10 +33,8 @@ if (!TARGET_URL) {
   process.exit(1);
 }
 
-const browser = await chromium.launch({
-  headless: true,
-  ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
-});
+// WR-03: browser declared here, launched inside run() so launch errors are caught by master try/catch
+let browser: Browser | undefined;
 
 async function waitForCloudflare(page: Page): Promise<void> {
   const deadline = Date.now() + CF_TIMEOUT_MS;
@@ -68,8 +67,9 @@ function extractDate(labelText: string): string | null {
   return `${m[1]}${m[2]}${m[3]}`;  // YYYYMMDD
 }
 
-async function sendSlackNotification(text: string): Promise<void> {
-  if (!SLACK_WEBHOOK_URL) return;
+// WR-02: returns true on confirmed delivery (or when webhook is unconfigured), false on failure
+async function sendSlackNotification(text: string): Promise<boolean> {
+  if (!SLACK_WEBHOOK_URL) return true;
   try {
     const res = await fetch(SLACK_WEBHOOK_URL, {
       method: 'POST',
@@ -78,15 +78,22 @@ async function sendSlackNotification(text: string): Promise<void> {
     });
     if (!res.ok) {
       process.stderr.write(`[kawasaki] ${new Date().toISOString()} — WARN: Slack webhook returned ${res.status}\n`);
+      return false;
     }
+    return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[kawasaki] ${new Date().toISOString()} — WARN: Slack notification failed: ${msg}\n`);
+    return false;
   }
 }
 
 async function run(): Promise<void> {
-  fs.mkdirSync(path.resolve(process.cwd(), 'output'), { recursive: true });
+  // WR-03: launch inside run() so failures are caught by master try/catch and logged to file
+  browser = await chromium.launch({
+    headless: true,
+    ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
+  });
   const page = await browser.newPage();
 
   await page.goto(TARGET_URL!, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS });
@@ -154,13 +161,14 @@ async function run(): Promise<void> {
   }
 
   // Step 2 — Empty parse guard (REL-05, D-13)
+  // WR-01: exit(1) so CI marks the run as failed — empty cells = broken page structure
   if (allData.length === 0) {
     const ts = new Date().toISOString();
     const emptyLine = `[kawasaki] ${ts} — ERROR: selector matched 0 cells — possible page structure change`;
     console.log(emptyLine);
     fs.appendFileSync(LOG_FILE, emptyLine + '\n', 'utf-8');
     await browser.close().catch(() => {});
-    process.exit(0);
+    process.exit(1);
   }
 
   // Step 4 — Compute today's date string (DET-05, D-05)
@@ -218,8 +226,9 @@ async function run(): Promise<void> {
     const slackText = qualifyingDates
       .map(date => `[kawasaki] SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date} — book now: ${TARGET_URL}`)
       .join('\n');
-    await sendSlackNotification(slackText);
-    state.alert_active = true;
+    // WR-02: only set alert_active if Slack delivery confirmed (prevents silent suppression on webhook failure)
+    const delivered = await sendSlackNotification(slackText);
+    state.alert_active = delivered;
   } else {
     // Already alerted
     for (const date of qualifyingDates) {
@@ -233,6 +242,9 @@ async function run(): Promise<void> {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
+
+// WR-04: create output/ before master try/catch so LOG_FILE is writable in the catch block
+fs.mkdirSync(path.resolve(process.cwd(), 'output'), { recursive: true });
 
 let masterTimeout: ReturnType<typeof setTimeout>;
 try {
@@ -249,11 +261,11 @@ try {
   const msg = err instanceof Error ? err.message : String(err);
   const errLine = `[kawasaki] ${new Date().toISOString()} — ERROR: ${msg}`;
   process.stdout.write(errLine + '\n');
-  try { fs.appendFileSync(LOG_FILE, errLine + '\n', 'utf-8'); } catch { /* ignore if output/ missing */ }
-  await browser.close().catch(() => {});
-  process.exit(0);
+  try { fs.appendFileSync(LOG_FILE, errLine + '\n', 'utf-8'); } catch { /* ignore */ }
+  await browser?.close().catch(() => {});
+  process.exit(1);  // WR-01: non-zero exit so CI marks failures as failures
 } finally {
   clearTimeout(masterTimeout!);
 }
 
-await browser.close();
+await browser?.close();
