@@ -21,7 +21,8 @@
 
 - [x] **NOT-01
 **: Script prints a timestamped result (slot found / not found) to console on every run
-- [ ] **NOT-02**: Script sends an OS desktop popup notification when an available slot is detected
+- [x] **NOT-02
+**: Script sends an OS desktop popup notification when an available slot is detected
 
 ### Reliability
 
@@ -30,14 +31,16 @@
 - [x] **REL-02
 **: Script persists state to a file after each run so the same open slot does not trigger repeated alerts every hour
 - [x] **REL-03**: Script times out gracefully if the page takes too long to load, logs the error, and exits cleanly
-- [ ] **REL-04**: Script appends a timestamped result line to a structured log file on every run
+- [x] **REL-04
+**: Script appends a timestamped result line to a structured log file on every run
 - [x] **REL-05
 **: Script treats an empty calendar parse result as an error state, not a clean "no slots" result
 
 ### Config & Scheduling
 
 - [x] **CFG-01**: Target URL and CSS selectors are stored in a `.env` file and not hardcoded in the script
-- [ ] **CFG-02**: Script runs automatically every hour via system cron
+- [x] **CFG-02
+**: Script runs automatically every hour via system cron
 - [x] **CFG-03**: Script prints a startup confirmation message showing the URL it is watching
 
 ## v2 Requirements
