@@ -12,21 +12,27 @@
 - [x] **DET-03**: Script waits for the appointment calendar to fully render before reading its content
 - [x] **DET-04
 **: Script detects available (clickable, non-disabled) date slot buttons in the calendar
-- [ ] **DET-05**: Script filters out past dates and never alerts on already-elapsed calendar dates
-- [ ] **DET-06**: Debug/verbose mode dumps raw button attributes to stdout for selector inspection
+- [x] **DET-05
+**: Script filters out past dates and never alerts on already-elapsed calendar dates
+- [x] **DET-06
+**: Debug/verbose mode dumps raw button attributes to stdout for selector inspection
 
 ### Notification
 
-- [ ] **NOT-01**: Script prints a timestamped result (slot found / not found) to console on every run
+- [x] **NOT-01
+**: Script prints a timestamped result (slot found / not found) to console on every run
 - [ ] **NOT-02**: Script sends an OS desktop popup notification when an available slot is detected
 
 ### Reliability
 
-- [ ] **REL-01**: A single failed check does not stop future scheduled runs — errors are caught, logged, and execution continues
-- [ ] **REL-02**: Script persists state to a file after each run so the same open slot does not trigger repeated alerts every hour
+- [x] **REL-01
+**: A single failed check does not stop future scheduled runs — errors are caught, logged, and execution continues
+- [x] **REL-02
+**: Script persists state to a file after each run so the same open slot does not trigger repeated alerts every hour
 - [x] **REL-03**: Script times out gracefully if the page takes too long to load, logs the error, and exits cleanly
 - [ ] **REL-04**: Script appends a timestamped result line to a structured log file on every run
-- [ ] **REL-05**: Script treats an empty calendar parse result as an error state, not a clean "no slots" result
+- [x] **REL-05
+**: Script treats an empty calendar parse result as an error state, not a clean "no slots" result
 
 ### Config & Scheduling
 
