@@ -12,13 +12,12 @@ Detect the moment a clickable appointment slot appears on the Japanese license c
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Script checks the reservation page for available (clickable) slots — Validated in Phase 1 & 2: `td[onclick^="selectDate"]` with `enable` class; `npm run fetch` and `npm run check` both confirmed live
+- [x] Script outputs a clear result — available or not — to terminal/log — Validated in Phase 2: `[kawasaki] ISO — SLOT AVAILABLE / no qualifying slots / already alerted` confirmed live
 
 ### Active
 
-- [ ] Script checks the reservation page for available (clickable) slots
 - [ ] Script runs on a schedule (e.g. hourly via cron or similar)
-- [ ] Script outputs a clear result — available or not — to terminal/log
 - [ ] Notification mechanism when a slot is found (TBD — terminal output for now, extendable later)
 - [ ] Handles the case where the page is always showing full (no false positives)
 
@@ -47,9 +46,10 @@ Detect the moment a clickable appointment slot appears on the Japanese license c
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Python + requests/Playwright | Best ecosystem for HTML inspection and headless browsing on Japanese sites that may use JS-rendered content | — Pending |
-| Detect by clickable vs greyed-out state | User confirmed this is how availability is signaled on the page | — Pending |
-| Output to terminal first, notification later | Notification mechanism TBD — keep it simple, make it extensible | — Pending |
+| TypeScript + Playwright | Node ecosystem chosen over Python; system Chrome via executablePath works around corporate SSL proxy blocking Playwright binary download | — Validated Phase 1 |
+| Detect by `enable` CSS class on `td[onclick^="selectDate"]` | DOM inspection confirmed availability is `td.enable`; greyed-out cells lack this class | — Validated Phase 1 |
+| State persisted to `output/state.json` with `alert_active` flag | Prevents duplicate alerts across cron runs; resets when slots disappear | — Validated Phase 2 |
+| Output to stdout with `[kawasaki]` prefix, exit 0 always | Cron-compatible; errors logged to stdout so cron captures them | — Validated Phase 2 |
 
 ## Evolution
 
@@ -69,4 +69,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-24 after initialization*
+*Last updated: 2026-04-24 after Phase 2 completion*
