@@ -1,0 +1,17 @@
+{
+  "name": "kawasaki",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "fetch": "npx tsx src/fetch.ts"
+  },
+  "dependencies": {
+    "dotenv": "17.4.2",
+    "playwright": "1.59.1"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "tsx": "4.21.0",
+    "@types/node": "^22.0.0"
+  }
+}
