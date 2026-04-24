@@ -194,51 +194,58 @@ async function run(): Promise<void> {
   // Step 6 — Deduplicate qualifying dates
   const qualifyingDates = [...new Set(qualifying.map(r => extractDate(r.labelText)).filter(Boolean) as string[])].sort();
 
-  // Step 7 — Read state file (D-07, D-08, D-09)
-  type State = { alert_active: boolean; last_check: string; last_qualifying_dates: string[] };
+  // Step 7 — Read state file
+  type State = { alerted_dates: string[]; last_check: string };
 
-  let state: State = { alert_active: false, last_check: '', last_qualifying_dates: [] };
+  let state: State = { alerted_dates: [], last_check: '' };
   try {
     const raw = fs.readFileSync(STATE_FILE, 'utf-8');
-    state = JSON.parse(raw) as State;
+    const parsed = JSON.parse(raw);
+    // migrate old format (alert_active boolean) to alerted_dates array
+    state.alerted_dates = parsed.alerted_dates ?? [];
+    state.last_check = parsed.last_check ?? '';
   } catch {
     // Missing or corrupt file = first run; use defaults above
   }
 
   // Step 8 — Determine output and next state
   const ts = new Date().toISOString();
-  const hasSlots = qualifyingDates.length > 0;
 
   function logLine(line: string): void {
     console.log(line);
     fs.appendFileSync(LOG_FILE, line + '\n', 'utf-8');
   }
 
-  if (!hasSlots) {
+  if (qualifyingDates.length === 0) {
     const threshold = ALERT_BEFORE ? ` before ${ALERT_BEFORE}` : '';
     logLine(`[kawasaki] ${ts} — no qualifying slots (${SLOT_CATEGORY}${threshold})`);
-    state.alert_active = false;
-  } else if (!state.alert_active) {
-    // New alert — notify
-    for (const date of qualifyingDates) {
-      logLine(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
-    }
-    const slackText = qualifyingDates
-      .map(date => `[kawasaki] SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date} — book now: ${TARGET_URL}`)
-      .join('\n');
-    // WR-02: only set alert_active if Slack delivery confirmed (prevents silent suppression on webhook failure)
-    const delivered = await sendSlackNotification(slackText);
-    state.alert_active = delivered;
+    // prune all alerted dates — slots gone, reset so re-appearance triggers fresh alert
+    state.alerted_dates = [];
   } else {
-    // Already alerted
-    for (const date of qualifyingDates) {
-      logLine(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
+    // prune alerted_dates: remove any date no longer in this round's results
+    // so if a slot disappears and comes back later, it alerts again
+    state.alerted_dates = state.alerted_dates.filter(d => qualifyingDates.includes(d));
+
+    const newDates = qualifyingDates.filter(d => !state.alerted_dates.includes(d));
+
+    if (newDates.length > 0) {
+      for (const date of newDates) {
+        logLine(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
+      }
+      const slackText = newDates
+        .map(date => `[kawasaki] SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date} — book now: ${TARGET_URL}`)
+        .join('\n');
+      const delivered = await sendSlackNotification(slackText);
+      if (delivered) state.alerted_dates.push(...newDates);
+    } else {
+      for (const date of qualifyingDates) {
+        logLine(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
+      }
     }
   }
 
   // Step 9 — Write state file
   state.last_check = ts;
-  state.last_qualifying_dates = qualifyingDates;
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
