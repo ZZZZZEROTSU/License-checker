@@ -44,8 +44,8 @@ Plans:
   5. If the calendar container is present but returns zero buttons, the script logs an error state rather than silently reporting "no slots" — empty parse is treated as a broken selector
 **Plans**: 2 plans
 Plans:
-- [ ] 02-01-PLAN.md — Playwright browser layer: launch, Cloudflare wait, pagination loop, evaluateAll extraction
-- [ ] 02-02-PLAN.md — Filter pipeline, state store, console output, .env.example + package.json wiring
+- [x] 02-01-PLAN.md — Playwright browser layer: launch, Cloudflare wait, pagination loop, evaluateAll extraction
+- [x] 02-02-PLAN.md — Filter pipeline, state store, console output, .env.example + package.json wiring
 
 ### Phase 3: Notifier + Cron Deployment
 **Goal**: The fully assembled script runs automatically every hour, fires an OS desktop notification the first time an open slot is detected, and appends a timestamped result line to a structured log file on every run
