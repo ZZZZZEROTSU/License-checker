@@ -8,9 +8,7 @@ dotenv.config();
 const TARGET_URL = process.env.TARGET_URL;
 const CALENDAR_SELECTOR = process.env.CALENDAR_SELECTOR ?? '';
 const SLOT_CATEGORY = process.env.SLOT_CATEGORY ?? '';   // e.g. "普通車ＡＭ" — empty = all categories
-const CHROME_PATH =
-  process.env.CHROME_PATH ??
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME_PATH = process.env.CHROME_PATH ?? '';
 const PAGE_TIMEOUT_MS = 30_000;
 const CF_TIMEOUT_MS = 30_000;
 const CF_POLL_MS = 1_000;
@@ -21,13 +19,18 @@ const MAX_PAGES = 20;  // safety cap
 const ALERT_BEFORE = process.env.ALERT_BEFORE ?? '';   // YYYYMMDD — empty = no threshold
 const DEBUG = process.env.DEBUG === 'true';
 const STATE_FILE = path.resolve(process.cwd(), 'output', 'state.json');
+const LOG_FILE = path.resolve(process.cwd(), 'output', 'kawasaki.log');
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL ?? '';
 
 if (!TARGET_URL) {
   process.stderr.write('ERROR: TARGET_URL is not set in .env\n');
   process.exit(1);
 }
 
-const browser = await chromium.launch({ headless: true, executablePath: CHROME_PATH });
+const browser = await chromium.launch({
+  headless: true,
+  ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
+});
 
 async function waitForCloudflare(page: Page): Promise<void> {
   const deadline = Date.now() + CF_TIMEOUT_MS;
@@ -60,7 +63,25 @@ function extractDate(labelText: string): string | null {
   return `${m[1]}${m[2]}${m[3]}`;  // YYYYMMDD
 }
 
+async function sendSlackNotification(text: string): Promise<void> {
+  if (!SLACK_WEBHOOK_URL) return;
+  try {
+    const res = await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      process.stderr.write(`[kawasaki] ${new Date().toISOString()} — WARN: Slack webhook returned ${res.status}\n`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[kawasaki] ${new Date().toISOString()} — WARN: Slack notification failed: ${msg}\n`);
+  }
+}
+
 async function run(): Promise<void> {
+  fs.mkdirSync(path.resolve(process.cwd(), 'output'), { recursive: true });
   const page = await browser.newPage();
 
   await page.goto(TARGET_URL!, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS });
@@ -130,7 +151,9 @@ async function run(): Promise<void> {
   // Step 2 — Empty parse guard (REL-05, D-13)
   if (allData.length === 0) {
     const ts = new Date().toISOString();
-    console.log(`[kawasaki] ${ts} — ERROR: selector matched 0 cells — possible page structure change`);
+    const emptyLine = `[kawasaki] ${ts} — ERROR: selector matched 0 cells — possible page structure change`;
+    console.log(emptyLine);
+    fs.appendFileSync(LOG_FILE, emptyLine + '\n', 'utf-8');
     await browser.close().catch(() => {});
     process.exit(0);
   }
@@ -169,26 +192,34 @@ async function run(): Promise<void> {
     // Missing or corrupt file = first run; use defaults above
   }
 
-  // Step 8 — Determine output and next state (NOT-01, REL-02, D-10)
+  // Step 8 — Determine output and next state
   const ts = new Date().toISOString();
   const hasSlots = qualifyingDates.length > 0;
 
+  function logLine(line: string): void {
+    console.log(line);
+    fs.appendFileSync(LOG_FILE, line + '\n', 'utf-8');
+  }
+
   if (!hasSlots) {
     const threshold = ALERT_BEFORE ? ` before ${ALERT_BEFORE}` : '';
-    console.log(`[kawasaki] ${ts} — no qualifying slots (${SLOT_CATEGORY}${threshold})`);
+    logLine(`[kawasaki] ${ts} — no qualifying slots (${SLOT_CATEGORY}${threshold})`);
     state.alert_active = false;
   } else if (!state.alert_active) {
-    // New alert
+    // New alert — notify
     for (const date of qualifyingDates) {
-      console.log(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
+      logLine(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
     }
+    const slackText = qualifyingDates
+      .map(date => `[kawasaki] SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date} — book now: ${TARGET_URL}`)
+      .join('\n');
+    await sendSlackNotification(slackText);
     state.alert_active = true;
   } else {
     // Already alerted
     for (const date of qualifyingDates) {
-      console.log(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
+      logLine(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
     }
-    // alert_active stays true
   }
 
   // Step 9 — Write state file
@@ -211,7 +242,9 @@ try {
   ]);
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
-  process.stdout.write(`[kawasaki] ${new Date().toISOString()} — ERROR: ${msg}\n`);
+  const errLine = `[kawasaki] ${new Date().toISOString()} — ERROR: ${msg}`;
+  process.stdout.write(errLine + '\n');
+  try { fs.appendFileSync(LOG_FILE, errLine + '\n', 'utf-8'); } catch { /* ignore if output/ missing */ }
   await browser.close().catch(() => {});
   process.exit(0);
 } finally {
