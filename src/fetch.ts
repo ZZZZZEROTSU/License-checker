@@ -35,10 +35,7 @@ async function waitForCloudflare(page: Page): Promise<void> {
     if (!isCloudflare) return;
     await page.waitForTimeout(CF_POLL_MS);
   }
-  process.stderr.write(
-    `[${new Date().toISOString()}] ERROR: Cloudflare challenge did not resolve within ${CF_TIMEOUT_MS}ms\n`
-  );
-  process.exit(1);
+  throw new Error(`Cloudflare challenge did not resolve within ${CF_TIMEOUT_MS}ms`);
 }
 
 const browser = await chromium.launch({ headless: true, channel: 'chromium' });
