@@ -7,11 +7,14 @@ dotenv.config();
 
 const TARGET_URL = process.env.TARGET_URL;
 const CALENDAR_SELECTOR = process.env.CALENDAR_SELECTOR ?? '';
+const SLOT_CATEGORY = process.env.SLOT_CATEGORY ?? '';   // e.g. "普通車ＡＭ" — empty = all categories
 const OUTPUT_DIR = path.resolve(process.cwd(), 'output');
 const PAGE_TIMEOUT_MS = 30_000;
 const CF_TIMEOUT_MS = 30_000;
 const CF_POLL_MS = 1_000;
-const MASTER_TIMEOUT_MS = 60_000;
+const MASTER_TIMEOUT_MS = 180_000;  // 3 min — covers multi-page navigation
+const NEXT_BTN_SEL = 'input[aria-label="2週後のカレンダーページへ"]';
+const MAX_PAGES = 20;  // safety cap
 
 if (!TARGET_URL) {
   process.stderr.write('ERROR: TARGET_URL is not set in .env\n');
@@ -67,41 +70,77 @@ async function run(): Promise<void> {
     await page.waitForSelector(CALENDAR_SELECTOR, { state: 'visible', timeout: PAGE_TIMEOUT_MS });
   }
 
-  // Capture HTML snapshot
+  // Capture first-page HTML snapshot and screenshot
   const html = await page.content();
   fs.writeFileSync(path.join(OUTPUT_DIR, 'snapshot.html'), html, 'utf-8');
-
-  // Capture PNG screenshot
   await page.screenshot({ path: path.join(OUTPUT_DIR, 'snapshot.png'), fullPage: true });
 
-  // Build button selector
-  const buttonSel = CALENDAR_SELECTOR
-    ? `${CALENDAR_SELECTOR} button`
-    : 'td button, .calendar button, [role="gridcell"] button';
+  const slotSel = CALENDAR_SELECTOR
+    ? `${CALENDAR_SELECTOR} td[onclick^="selectDate"]`
+    : 'td[onclick^="selectDate"]';
 
-  // Extract button attributes via evaluateAll — single browser round-trip
-  const data = await page.locator(buttonSel).evaluateAll(els =>
-    els.map(el => ({
-      text: el.textContent?.trim() ?? '',
-      disabled: (el as HTMLButtonElement).disabled,
-      ariaDisabled: el.getAttribute('aria-disabled'),
-      classList: [...el.classList],
-      allAttributes: Object.fromEntries([...el.attributes].map(a => [a.name, a.value])),
-    }))
-  );
+  type SlotRecord = {
+    onclick: string;
+    classList: string[];
+    svgAriaLabel: string;
+    labelText: string;
+    allAttributes: Record<string, string>;
+  };
 
-  if (data.length === 0) {
-    process.stderr.write(
-      `[${new Date().toISOString()}] ERROR: DATA COLLECTION FAILURE — selector "${buttonSel}" ` +
-      `matched 0 buttons. Open output/snapshot.html to identify the correct selector.\n`
+  async function collectPageSlots(): Promise<SlotRecord[]> {
+    return page.locator(slotSel).evaluateAll(els =>
+      els.map(el => ({
+        onclick: el.getAttribute('onclick') ?? '',
+        classList: [...el.classList],
+        svgAriaLabel: el.querySelector('svg')?.getAttribute('aria-label') ?? '',
+        labelText: el.querySelector('.sr-only')?.textContent?.trim() ?? '',
+        allAttributes: Object.fromEntries([...el.attributes].map(a => [a.name, a.value])),
+      }))
     );
-    await browser.close();
-    process.exit(1);
   }
 
-  fs.writeFileSync(path.join(OUTPUT_DIR, 'buttons.json'), JSON.stringify(data, null, 2), 'utf-8');
+  // Collect slots across all calendar pages by clicking "2週後＞" until disabled
+  const allData: SlotRecord[] = [];
+  let pageNum = 0;
 
-  console.log(`[kawasaki] Wrote ${data.length} button records to output/buttons.json`);
+  while (pageNum < MAX_PAGES) {
+    const pageSlots = await collectPageSlots();
+    allData.push(...pageSlots);
+    console.log(`[kawasaki] Page ${pageNum + 1}: ${pageSlots.length} available slots`);
+
+    // Check if "2週後" button exists and is not disabled
+    const nextBtn = page.locator(NEXT_BTN_SEL);
+    const isDisabled = await nextBtn.getAttribute('disabled');
+    const exists = (await nextBtn.count()) > 0;
+    if (!exists || isDisabled !== null) break;
+
+    // Click next page and wait for calendar to re-render
+    await nextBtn.click();
+    await page.waitForFunction(() => document.readyState === 'complete', { timeout: PAGE_TIMEOUT_MS });
+    // Wait for the calendar table to re-render after click
+    await page.waitForSelector('#TBL', { state: 'visible', timeout: PAGE_TIMEOUT_MS });
+    pageNum++;
+  }
+
+  if (allData.length === 0) {
+    throw new Error(
+      `DATA COLLECTION FAILURE — selector "${slotSel}" matched 0 slot cells across all pages. ` +
+      `Open output/snapshot.html to identify the correct selector.`
+    );
+  }
+
+  // Filter by category if SLOT_CATEGORY is set (matches sr-only label prefix, e.g. "普通車ＡＭ")
+  const filtered = SLOT_CATEGORY
+    ? allData.filter(d => d.labelText.startsWith(SLOT_CATEGORY))
+    : allData;
+
+  if (SLOT_CATEGORY) {
+    console.log(`[kawasaki] Category filter "${SLOT_CATEGORY}": ${filtered.length}/${allData.length} slots`);
+  }
+
+  fs.writeFileSync(path.join(OUTPUT_DIR, 'buttons.json'), JSON.stringify(filtered, null, 2), 'utf-8');
+
+  console.log(`[kawasaki] Wrote ${filtered.length} slot records to output/buttons.json`);
 }
 
 try {
