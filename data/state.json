@@ -1,7 +1,4 @@
 {
-  "alert_active": true,
-  "last_check": "2026-04-24T15:06:44.440Z",
-  "last_qualifying_dates": [
-    "20260630"
-  ]
+  "alert_active": false,
+  "last_check": "2026-04-24T15:06:44.440Z"
 }
