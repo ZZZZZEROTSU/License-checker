@@ -2,7 +2,7 @@ name: kawasaki-slot-checker
 
 on:
   schedule:
-    - cron: '0 * * * *'   # hourly, UTC (D-11)
+    - cron: '55 * * * *'
   workflow_dispatch:        # manual trigger for testing
     inputs:
       slot_category:
