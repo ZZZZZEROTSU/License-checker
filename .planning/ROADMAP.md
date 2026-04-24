@@ -13,8 +13,8 @@ Three phases build the pipeline in strict dependency order. Phase 1 is explorato
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Fetch + DOM Inspection** - Working Playwright fetcher that navigates to the live page, survives Cloudflare, and dumps a full DOM snapshot for offline analysis
-- [ ] **Phase 2: Parser + Detector + State Store** - End-to-end detection pipeline that identifies open slots, filters past dates, deduplicates across runs, and prints timestamped console output
-- [ ] **Phase 3: Notifier + Cron Deployment** - Desktop notification on slot detection, structured log file, and hourly cron scheduling
+- [x] **Phase 2: Parser + Detector + State Store** - End-to-end detection pipeline that identifies open slots, filters past dates, deduplicates across runs, and prints timestamped console output
+- [x] **Phase 3: Notifier + Cron Deployment** - Slack notification on slot detection, structured log file, and hourly cron scheduling via GitHub Actions
 
 ## Phase Details
 
@@ -55,7 +55,10 @@ Plans:
   1. When a slot transitions from booked to available, an OS desktop popup notification appears with the slot date(s) — verified by force-triggering with a synthetic fixture
   2. Every run appends one timestamped line to a log file, so a post-hoc audit of all past checks is possible
   3. The script runs automatically once per hour via system cron and produces log output confirming execution, with no manual intervention required after initial setup
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 03-01-PLAN.md — Slack notifier, dual logging (console + file), conditional executablePath CI fix
+- [x] 03-02-PLAN.md — GitHub Actions hourly cron workflow, npm/Playwright caching, state commit with [skip ci]
 
 ## Progress
 
@@ -65,5 +68,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Fetch + DOM Inspection | 1/1 | Complete | 2026-04-24 |
-| 2. Parser + Detector + State Store | 0/TBD | Not started | - |
-| 3. Notifier + Cron Deployment | 0/TBD | Not started | - |
+| 2. Parser + Detector + State Store | 2/2 | Complete | 2026-04-24 |
+| 3. Notifier + Cron Deployment | 2/2 | Complete | 2026-04-24 |
