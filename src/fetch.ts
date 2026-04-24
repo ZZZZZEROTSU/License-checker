@@ -112,7 +112,8 @@ try {
     ),
   ]);
 } catch (err) {
-  process.stderr.write(`[${new Date().toISOString()}] ERROR: ${(err as Error).message}\n`);
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`[${new Date().toISOString()}] ERROR: ${msg}\n`);
   await browser.close().catch(() => {});
   process.exit(1);
 }
