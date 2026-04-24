@@ -29,8 +29,8 @@ jobs:
       - name: Run slot checker
         env:
           TARGET_URL: ${{ secrets.TARGET_URL }}
-          SLOT_CATEGORY: ${{ secrets.SLOT_CATEGORY }}
-          ALERT_BEFORE: ${{ secrets.ALERT_BEFORE }}
+          SLOT_CATEGORY: '普通車ＡＭ'
+          ALERT_BEFORE: '20260620'
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: npm run check     # D-16; CHROME_PATH intentionally absent → empty default → no executablePath
 
