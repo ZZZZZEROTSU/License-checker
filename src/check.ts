@@ -13,6 +13,7 @@ const PAGE_TIMEOUT_MS = 30_000;
 const CF_TIMEOUT_MS = 30_000;
 const CF_POLL_MS = 1_000;
 const MASTER_TIMEOUT_MS = 180_000;  // 3 min — covers multi-page navigation
+const WAITING_ROOM_TIMEOUT_MS = 180_000;  // 3 min max wait before skipping
 const NEXT_BTN_SEL = 'input[aria-label="2週後のカレンダーページへ"]';
 const MAX_PAGES = 20;  // safety cap
 
@@ -50,6 +51,25 @@ async function waitForCloudflare(page: Page): Promise<void> {
     await page.waitForTimeout(CF_POLL_MS);
   }
   throw new Error(`Cloudflare challenge did not resolve within ${CF_TIMEOUT_MS}ms`);
+}
+
+async function waitForWaitingRoom(page: Page): Promise<'ready' | 'timeout'> {
+  const deadline = Date.now() + WAITING_ROOM_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const title = await page.title();
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    const inWaitingRoom =
+      title.includes('待合室') ||
+      title.toLowerCase().includes('waiting room') ||
+      bodyText.includes('待合室') ||
+      bodyText.toLowerCase().includes('waiting room') ||
+      bodyText.includes('順番待ち');
+    if (!inWaitingRoom) return 'ready';
+    const remaining = Math.round((deadline - Date.now()) / 1000);
+    process.stdout.write(`[kawasaki] ${new Date().toISOString()} — in waiting room, retrying (${remaining}s left)\n`);
+    await page.waitForTimeout(10_000);  // poll every 10s
+  }
+  return 'timeout';
 }
 
 type SlotRecord = {
@@ -99,6 +119,16 @@ async function run(): Promise<void> {
   await page.goto(TARGET_URL!, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS });
 
   await waitForCloudflare(page);
+
+  const waitingRoomResult = await waitForWaitingRoom(page);
+  if (waitingRoomResult === 'timeout') {
+    const ts = new Date().toISOString();
+    const line = `[kawasaki] ${ts} — waiting room timeout after ${WAITING_ROOM_TIMEOUT_MS / 1000}s — skipping this run`;
+    process.stdout.write(line + '\n');
+    fs.appendFileSync(LOG_FILE, line + '\n', 'utf-8');
+    await browser!.close().catch(() => {});
+    process.exit(0);
+  }
 
   // Stage 1: wait for network idle — wrap in try/catch for pages with persistent polling
   try {
