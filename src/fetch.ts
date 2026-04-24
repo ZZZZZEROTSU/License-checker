@@ -38,7 +38,10 @@ async function waitForCloudflare(page: Page): Promise<void> {
   throw new Error(`Cloudflare challenge did not resolve within ${CF_TIMEOUT_MS}ms`);
 }
 
-const browser = await chromium.launch({ headless: true, channel: 'chromium' });
+const CHROME_PATH =
+  process.env.CHROME_PATH ??
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const browser = await chromium.launch({ headless: true, executablePath: CHROME_PATH });
 
 async function run(): Promise<void> {
   const page = await browser.newPage();
