@@ -4,6 +4,14 @@ on:
   schedule:
     - cron: '0 * * * *'   # hourly, UTC (D-11)
   workflow_dispatch:        # manual trigger for testing
+    inputs:
+      slot_category:
+        description: 'Slot category to check (e.g. 普通車ＡＭ)'
+        required: false
+        default: '普通車ＡＭ'
+      alert_before:
+        description: 'Only alert for slots before this date (YYYYMMDD)'
+        required: false
 
 jobs:
   check:
@@ -29,8 +37,8 @@ jobs:
       - name: Run slot checker
         env:
           TARGET_URL: ${{ secrets.TARGET_URL }}
-          SLOT_CATEGORY: '普通車ＡＭ'
-          ALERT_BEFORE: '20260620'
+          SLOT_CATEGORY: ${{ inputs.slot_category || '普通車ＡＭ' }}
+          ALERT_BEFORE: ${{ inputs.alert_before || '' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: npm run check     # D-16; CHROME_PATH intentionally absent → empty default → no executablePath
 
@@ -38,7 +46,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/state.json
+          git add data/state.json
           if git diff --cached --quiet; then
             echo "No state change — skipping commit"
           else

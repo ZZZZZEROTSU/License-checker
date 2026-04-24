@@ -16,9 +16,14 @@ const MASTER_TIMEOUT_MS = 180_000;  // 3 min — covers multi-page navigation
 const NEXT_BTN_SEL = 'input[aria-label="2週後のカレンダーページへ"]';
 const MAX_PAGES = 20;  // safety cap
 
-const ALERT_BEFORE = process.env.ALERT_BEFORE ?? '';   // YYYYMMDD — empty = no threshold
+function twoMonthsFromNow(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 2);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+const ALERT_BEFORE = process.env.ALERT_BEFORE || twoMonthsFromNow();  // YYYYMMDD
 const DEBUG = process.env.DEBUG === 'true';
-const STATE_FILE = path.resolve(process.cwd(), 'output', 'state.json');
+const STATE_FILE = path.resolve(process.cwd(), 'data', 'state.json');
 const LOG_FILE = path.resolve(process.cwd(), 'output', 'kawasaki.log');
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL ?? '';
 
