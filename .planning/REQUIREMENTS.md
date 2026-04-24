@@ -10,7 +10,8 @@
 - [x] **DET-01**: Script launches a hidden Chrome browser and navigates to the reservation page URL
 - [x] **DET-02**: Script waits for the Cloudflare challenge page (if present) to resolve before proceeding
 - [x] **DET-03**: Script waits for the appointment calendar to fully render before reading its content
-- [ ] **DET-04**: Script detects available (clickable, non-disabled) date slot buttons in the calendar
+- [x] **DET-04
+**: Script detects available (clickable, non-disabled) date slot buttons in the calendar
 - [ ] **DET-05**: Script filters out past dates and never alerts on already-elapsed calendar dates
 - [ ] **DET-06**: Debug/verbose mode dumps raw button attributes to stdout for selector inspection
 
