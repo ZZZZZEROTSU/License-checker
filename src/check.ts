@@ -198,21 +198,24 @@ async function run(): Promise<void> {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
 
+let masterTimeout: ReturnType<typeof setTimeout>;
 try {
   await Promise.race([
     run(),
-    new Promise<never>((_, rej) =>
-      setTimeout(
+    new Promise<never>((_, rej) => {
+      masterTimeout = setTimeout(
         () => rej(new Error(`Master timeout exceeded (${MASTER_TIMEOUT_MS}ms)`)),
         MASTER_TIMEOUT_MS
-      )
-    ),
+      );
+    }),
   ]);
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   process.stdout.write(`[kawasaki] ${new Date().toISOString()} — ERROR: ${msg}\n`);
   await browser.close().catch(() => {});
   process.exit(0);
+} finally {
+  clearTimeout(masterTimeout!);
 }
 
 await browser.close();

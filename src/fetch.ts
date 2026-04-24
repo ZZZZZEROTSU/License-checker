@@ -143,21 +143,24 @@ async function run(): Promise<void> {
   console.log(`[kawasaki] Wrote ${filtered.length} slot records to output/buttons.json`);
 }
 
+let masterTimeout: ReturnType<typeof setTimeout>;
 try {
   await Promise.race([
     run(),
-    new Promise<never>((_, rej) =>
-      setTimeout(
+    new Promise<never>((_, rej) => {
+      masterTimeout = setTimeout(
         () => rej(new Error(`Master timeout exceeded (${MASTER_TIMEOUT_MS}ms)`)),
         MASTER_TIMEOUT_MS
-      )
-    ),
+      );
+    }),
   ]);
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   process.stderr.write(`[${new Date().toISOString()}] ERROR: ${msg}\n`);
   await browser.close().catch(() => {});
   process.exit(1);
+} finally {
+  clearTimeout(masterTimeout!);
 }
 
 await browser.close();
