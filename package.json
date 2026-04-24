@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "fetch": "npx tsx src/fetch.ts"
+    "fetch": "npx tsx src/fetch.ts",
+    "check": "npx tsx src/check.ts"
   },
   "dependencies": {
     "dotenv": "17.4.2",
