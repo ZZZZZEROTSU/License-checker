@@ -29,12 +29,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'   # D-17
+          cache: 'npm'         # caches node_modules across runs
 
       - name: Install dependencies
         run: npm ci            # D-16
 
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium --with-deps   # D-13
+
+      - name: Install Playwright system deps only
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run slot checker
         env:
