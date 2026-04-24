@@ -39,15 +39,18 @@ key-files:
   modified: []
 
 key-decisions:
-  - "Playwright 1.59.1 with channel: chromium + headless: true — new headless mode, reduced bot fingerprint"
-  - "rebrowser-playwright held in reserve — only if plain Playwright receives 403/CAPTCHA on live run"
+  - "Switched from channel: chromium to executablePath: system Chrome — corporate proxy blocks playwright install download"
+  - "Slot cells are <td onclick=\"selectDate(...)\"> not <button> — selector changed to td[onclick^=\"selectDate\"]"
+  - "Pagination loop added — clicks '2週後' button until disabled, collects slots across all calendar pages"
+  - "SLOT_CATEGORY env var added — filters by labelText prefix (e.g. '普通車ＡＭ'), empty = all categories"
   - "networkidle timeout wrapped in try/catch — falls through to readyState rather than hard-failing on polling pages"
-  - "Chromium binary installed via cached playwright installation (TLS cert error blocked fresh download)"
+  - "rebrowser-playwright held in reserve — plain Playwright passed live run with no 403/CAPTCHA"
 
 patterns-established:
   - "Pattern: All env config via dotenv at top of file; constants defined before any functions"
   - "Pattern: Startup log before browser launch to confirm URL being watched"
-  - "Pattern: Empty artifact = hard error (exit 1), not silent success"
+  - "Pattern: Empty artifact = hard error (throw Error caught by master timeout), not silent success"
+  - "Pattern: Paginate by clicking JS navigation buttons and waiting for #TBL re-render"
 
 requirements-completed: [DET-01, DET-02, DET-03, REL-03, CFG-01, CFG-03]
 
@@ -93,34 +96,59 @@ Each task was committed atomically:
 
 ## Decisions Made
 
-- Used `channel: 'chromium'` with `headless: true` for new headless mode as specified in D-02
-- `networkidle` wait wrapped in try/catch with fallback warning — handles polling pages (per RESEARCH.md Pitfall 3)
-- Chromium binary was already present in `~/Library/Caches/ms-playwright/chromium-1217` from a prior installation; `npx playwright install chromium` failed due to TLS self-signed cert (corporate proxy), but the existing binary is used automatically by Playwright at runtime
+- Switched from `channel: 'chromium'` to `executablePath` pointing at system Chrome — corporate proxy blocks `npx playwright install chromium` with `SELF_SIGNED_CERT_IN_CHAIN`. Override via `CHROME_PATH` env var.
+- Slot elements are `<td onclick="selectDate(...)">` cells, not `<button>` — selector changed to `td[onclick^="selectDate"]` after live DOM inspection.
+- Added pagination loop: clicks `input[aria-label="2週後のカレンダーページへ"]` until `disabled`, waits for `#TBL` re-render between pages. Confirmed 6 pages on live run.
+- Added `SLOT_CATEGORY` env var for category filtering via `labelText` prefix match.
+- `networkidle` wait wrapped in try/catch — falls through to readyState check on polling pages.
 
 ## Deviations from Plan
 
-None — plan executed exactly as written. The Chromium download TLS error is an environment issue, not a code deviation; the pre-installed binary satisfies the requirement.
+- **Selector**: Plan specified `button` elements; live DOM shows `<td onclick="selectDate(...)">` cells. Selector updated accordingly.
+- **Pagination**: Not in original plan — discovered necessary after first run returned only first 2-week window. Loop added to cover full booking horizon.
+- **Chrome binary**: `channel: 'chromium'` replaced with `executablePath` to system Chrome due to corporate TLS proxy blocking Playwright's binary download.
+- **Master timeout**: Increased from 60s to 180s to accommodate multi-page navigation.
 
-## Issues Encountered
+## Live Run Results (2026-04-24)
 
-**Chromium download blocked by TLS self-signed certificate:** `npx playwright install chromium` failed with `SELF_SIGNED_CERT_IN_CHAIN` (corporate proxy/cert chain). The binary was already installed at `~/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/` from a prior Playwright installation, so the runtime will work correctly. No code change required.
+```
+Page 1:  5 available slots
+Page 2:  9 available slots
+Page 3:  5 available slots
+Page 4:  0 available slots
+Page 5:  5 available slots
+Page 6:  3 available slots
+Total:  27 slots across all categories
+普通車ＡＭ: 3 slots — 2026-06-26, 2026-06-30 (×2)
+```
 
-## User Setup Required
+## Phase 2 Fingerprint (CONFIRMED)
 
-To run the fetcher:
+| Signal | Value |
+|--------|-------|
+| Available cell selector | `td[onclick^="selectDate"]` |
+| Available class | `tdSelect enable` |
+| Unavailable class | `disable` (no onclick) |
+| Out-of-period class | `time--cell--tri none` |
+| SVG aria-label (available) | `予約可能` |
+| Category + date | `labelText` — e.g. `"普通車ＡＭは2026年06月26日"` |
+| CALENDAR_SELECTOR needed | No — `td[onclick^="selectDate"]` is sufficient globally |
 
-1. Copy `.env.example` to `.env`: `cp .env.example .env`
-2. Run: `npm run fetch`
+## User Setup
 
-Expected output: `[kawasaki] Watching: https://dshinsei.e-kanagawa.lg.jp/...` then either success (three files in `output/`) or a timestamped error to stderr.
-
-After a successful run, inspect `output/buttons.json` to identify the correct `CALENDAR_SELECTOR` value for Phase 2.
+```bash
+cp .env.example .env
+# Edit .env: set SLOT_CATEGORY=普通車ＡＭ (or your target category)
+npm run fetch
+# Output: output/buttons.json with available slots for the category
+```
 
 ## Next Phase Readiness
 
-- Phase 1 fetcher is complete and ready to run against the live page
-- Phase 2 (slot detection) requires: a successful Phase 1 run producing `output/buttons.json`, manual inspection to identify the CSS selector and attribute fingerprint that distinguishes available from booked buttons
-- Blocker remains: exact `CALENDAR_SELECTOR` and availability attribute fingerprint are unknown until Phase 1 runs live
+Phase 2 (slot detection) can proceed immediately. All unknowns resolved:
+- Availability fingerprint: `enable` class + `svgAriaLabel === "予約可能"`
+- Date extraction: parse `labelText` (format: `"カテゴリは YYYY年MM月DD日"`)
+- `CALENDAR_SELECTOR` is not needed — global `td[onclick^="selectDate"]` works
 
 ---
 *Phase: 01-fetch-dom-inspection*
