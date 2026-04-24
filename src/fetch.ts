@@ -74,7 +74,7 @@ async function run(): Promise<void> {
   // Build button selector
   const buttonSel = CALENDAR_SELECTOR
     ? `${CALENDAR_SELECTOR} button`
-    : 'td button, .calendar button, [role="gridcell"] button, button';
+    : 'td button, .calendar button, [role="gridcell"] button';
 
   // Extract button attributes via evaluateAll — single browser round-trip
   const data = await page.locator(buttonSel).evaluateAll(els =>
