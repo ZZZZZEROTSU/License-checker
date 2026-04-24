@@ -53,7 +53,14 @@ type SlotRecord = {
   allAttributes: Record<string, string>;
 };
 
-async function run(): Promise<SlotRecord[]> {
+function extractDate(labelText: string): string | null {
+  // labelText format: "普通車ＡＭは2026年06月26日"
+  const m = labelText.match(/(\d{4})年(\d{2})月(\d{2})日/);
+  if (!m) return null;
+  return `${m[1]}${m[2]}${m[3]}`;  // YYYYMMDD
+}
+
+async function run(): Promise<void> {
   const page = await browser.newPage();
 
   await page.goto(TARGET_URL!, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS });
@@ -115,8 +122,80 @@ async function run(): Promise<SlotRecord[]> {
     pageNum++;
   }
 
-  // TODO(plan-02): filter, state, output logic goes here
-  return allData;
+  // Step 1 — DEBUG dump (DET-06, D-11)
+  if (DEBUG) {
+    console.log('[kawasaki] DEBUG: raw slot records', JSON.stringify(allData, null, 2));
+  }
+
+  // Step 2 — Empty parse guard (REL-05, D-13)
+  if (allData.length === 0) {
+    const ts = new Date().toISOString();
+    console.log(`[kawasaki] ${ts} — ERROR: selector matched 0 cells — possible page structure change`);
+    await browser.close().catch(() => {});
+    process.exit(0);
+  }
+
+  // Step 4 — Compute today's date string (DET-05, D-05)
+  const now = new Date();
+  const today = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+
+  // Step 5 — Filter pipeline (DET-04, DET-05, DET-06)
+  const qualifying = allData.filter(rec => {
+    // Must have 'enable' class
+    if (!rec.classList.includes('enable')) return false;
+    // Category filter
+    if (SLOT_CATEGORY && !rec.labelText.startsWith(SLOT_CATEGORY)) return false;
+    // Date extraction
+    const date = extractDate(rec.labelText);
+    if (!date) return false;
+    // Past-date filter: skip dates before today
+    if (date < today) return false;
+    // Threshold filter: skip dates on or after ALERT_BEFORE (if set)
+    if (ALERT_BEFORE && date >= ALERT_BEFORE) return false;
+    return true;
+  });
+
+  // Step 6 — Deduplicate qualifying dates
+  const qualifyingDates = [...new Set(qualifying.map(r => extractDate(r.labelText)).filter(Boolean) as string[])].sort();
+
+  // Step 7 — Read state file (D-07, D-08, D-09)
+  type State = { alert_active: boolean; last_check: string; last_qualifying_dates: string[] };
+
+  let state: State = { alert_active: false, last_check: '', last_qualifying_dates: [] };
+  try {
+    const raw = fs.readFileSync(STATE_FILE, 'utf-8');
+    state = JSON.parse(raw) as State;
+  } catch {
+    // Missing or corrupt file = first run; use defaults above
+  }
+
+  // Step 8 — Determine output and next state (NOT-01, REL-02, D-10)
+  const ts = new Date().toISOString();
+  const hasSlots = qualifyingDates.length > 0;
+
+  if (!hasSlots) {
+    const threshold = ALERT_BEFORE ? ` before ${ALERT_BEFORE}` : '';
+    console.log(`[kawasaki] ${ts} — no qualifying slots (${SLOT_CATEGORY}${threshold})`);
+    state.alert_active = false;
+  } else if (!state.alert_active) {
+    // New alert
+    for (const date of qualifyingDates) {
+      console.log(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
+    }
+    state.alert_active = true;
+  } else {
+    // Already alerted
+    for (const date of qualifyingDates) {
+      console.log(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
+    }
+    // alert_active stays true
+  }
+
+  // Step 9 — Write state file
+  state.last_check = ts;
+  state.last_qualifying_dates = qualifyingDates;
+  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
 
 try {
