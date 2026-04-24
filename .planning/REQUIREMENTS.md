@@ -22,7 +22,7 @@
 - [x] **NOT-01
 **: Script prints a timestamped result (slot found / not found) to console on every run
 - [x] **NOT-02
-**: Script sends an OS desktop popup notification when an available slot is detected
+**: Script sends a Slack webhook notification when an available slot is detected
 
 ### Reliability
 
