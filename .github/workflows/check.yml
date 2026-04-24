@@ -1,0 +1,47 @@
+name: kawasaki-slot-checker
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # hourly, UTC (D-11)
+  workflow_dispatch:        # manual trigger for testing
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # needed to push state commit back
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'   # D-17
+
+      - name: Install dependencies
+        run: npm ci            # D-16
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps   # D-13
+
+      - name: Run slot checker
+        env:
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          SLOT_CATEGORY: ${{ secrets.SLOT_CATEGORY }}
+          ALERT_BEFORE: ${{ secrets.ALERT_BEFORE }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: npm run check     # D-16; CHROME_PATH intentionally absent → empty default → no executablePath
+
+      - name: Commit state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/state.json
+          if git diff --cached --quiet; then
+            echo "No state change — skipping commit"
+          else
+            git commit -m "chore(ci): update state [skip ci]"   # D-14
+            git push
+          fi
