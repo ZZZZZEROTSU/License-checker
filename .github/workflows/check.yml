@@ -1,14 +1,14 @@
 name: kawasaki-slot-checker
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'
-  workflow_dispatch:        # manual trigger for testing
+  repository_dispatch:
+      types: [check]
+  workflow_dispatch: 
     inputs:
       slot_category:
         description: 'Slot category to check — comma-separated for multiple (e.g. 普通車ＡＭ,普通車ＰＭ)'
         required: false
-        default: '普通車ＡＭ'
+        default: '普通車ＡＭ,普通車ＰＭ'
       alert_before:
         description: 'Only alert for slots before this date (YYYYMMDD)'
         required: false
@@ -52,8 +52,8 @@ jobs:
       - name: Run slot checker
         env:
           TARGET_URL: ${{ secrets.TARGET_URL }}
-          SLOT_CATEGORY: ${{ inputs.slot_category || '普通車ＡＭ,普通車ＰＭ' }}
-          ALERT_BEFORE: ${{ inputs.alert_before || '' }}
+          SLOT_CATEGORY: ${{ inputs.slot_category || github.event.client_payload.slot_category || '普通車ＡＭ,普通車ＰＭ' }}
+          ALERT_BEFORE: ${{ inputs.alert_before || github.event.client_payload.alert_before || '' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: npm run check     # D-16; CHROME_PATH intentionally absent → empty default → no executablePath
 
