@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # manual trigger for testing
     inputs:
       slot_category:
-        description: 'Slot category to check (e.g. 普通車ＡＭ)'
+        description: 'Slot category to check — comma-separated for multiple (e.g. 普通車ＡＭ,普通車ＰＭ)'
         required: false
         default: '普通車ＡＭ'
       alert_before:

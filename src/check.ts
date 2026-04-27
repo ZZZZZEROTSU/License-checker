@@ -7,7 +7,10 @@ dotenv.config();
 
 const TARGET_URL = process.env.TARGET_URL;
 const CALENDAR_SELECTOR = process.env.CALENDAR_SELECTOR ?? '';
-const SLOT_CATEGORY = process.env.SLOT_CATEGORY ?? '';   // e.g. "普通車ＡＭ" — empty = all categories
+const SLOT_CATEGORIES = (process.env.SLOT_CATEGORY ?? '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);  // empty = all categories
 const CHROME_PATH = process.env.CHROME_PATH ?? '';
 const PAGE_TIMEOUT_MS = 30_000;
 const CF_TIMEOUT_MS = 30_000;
@@ -185,12 +188,12 @@ async function run(): Promise<void> {
     pageNum++;
   }
 
-  // Step 1 — DEBUG dump (DET-06, D-11)
+  // Step 1 — DEBUG dump
   if (DEBUG) {
     console.log('[kawasaki] DEBUG: raw slot records', JSON.stringify(allData, null, 2));
   }
 
-  // Step 2 — Empty parse guard (REL-05, D-13)
+  // Step 2 — Empty parse guard
   // WR-01: exit(1) so CI marks the run as failed — empty cells = broken page structure
   if (allData.length === 0) {
     const ts = new Date().toISOString();
@@ -201,44 +204,47 @@ async function run(): Promise<void> {
     process.exit(1);
   }
 
-  // Step 4 — Compute today's date string (DET-05, D-05)
+  // Step 3 — Compute today's date string
   const now = new Date();
   const today = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
-  // Step 5 — Filter pipeline (DET-04, DET-05, DET-06)
-  const qualifying = allData.filter(rec => {
-    // Must have 'enable' class
-    if (!rec.classList.includes('enable')) return false;
-    // Category filter
-    if (SLOT_CATEGORY && !rec.labelText.startsWith(SLOT_CATEGORY)) return false;
-    // Date extraction
-    const date = extractDate(rec.labelText);
-    if (!date) return false;
-    // Past-date filter: skip dates before today
-    if (date < today) return false;
-    // Threshold filter: skip dates on or after ALERT_BEFORE (if set)
-    if (ALERT_BEFORE && date >= ALERT_BEFORE) return false;
-    return true;
-  });
+  // Step 4 — Build qualifying dates per category
+  // categories to check: explicit list, or a single '' sentinel meaning "no category filter"
+  const categoriesToCheck = SLOT_CATEGORIES.length > 0 ? SLOT_CATEGORIES : [''];
 
-  // Step 6 — Deduplicate qualifying dates
-  const qualifyingDates = [...new Set(qualifying.map(r => extractDate(r.labelText)).filter(Boolean) as string[])].sort();
+  function qualifyingDatesForCategory(category: string): string[] {
+    const qualifying = allData.filter(rec => {
+      if (!rec.classList.includes('enable')) return false;
+      if (category && !rec.labelText.startsWith(category)) return false;
+      const date = extractDate(rec.labelText);
+      if (!date) return false;
+      if (date < today) return false;
+      if (ALERT_BEFORE && date >= ALERT_BEFORE) return false;
+      return true;
+    });
+    return [...new Set(qualifying.map(r => extractDate(r.labelText)).filter(Boolean) as string[])].sort();
+  }
 
-  // Step 7 — Read state file
-  type State = { alerted_dates: string[]; last_check: string };
+  // Step 5 — Read state file
+  type State = { alerted_dates: Record<string, string[]>; last_check: string };
 
-  let state: State = { alerted_dates: [], last_check: '' };
+  let state: State = { alerted_dates: {}, last_check: '' };
   try {
     const raw = fs.readFileSync(STATE_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
-    // migrate old format (alert_active boolean) to alerted_dates array
-    state.alerted_dates = parsed.alerted_dates ?? [];
+    // migrate old formats to Record<string, string[]>
+    if (Array.isArray(parsed.alerted_dates)) {
+      // old array format — start fresh (breaking state change)
+      state.alerted_dates = {};
+    } else {
+      state.alerted_dates = parsed.alerted_dates ?? {};
+    }
     state.last_check = parsed.last_check ?? '';
   } catch {
     // Missing or corrupt file = first run; use defaults above
   }
 
-  // Step 8 — Determine output and next state
+  // Step 6 — Per-category alert logic
   const ts = new Date().toISOString();
 
   function logLine(line: string): void {
@@ -246,35 +252,40 @@ async function run(): Promise<void> {
     fs.appendFileSync(LOG_FILE, line + '\n', 'utf-8');
   }
 
-  if (qualifyingDates.length === 0) {
-    const threshold = ALERT_BEFORE ? ` before ${ALERT_BEFORE}` : '';
-    logLine(`[kawasaki] ${ts} — no qualifying slots (${SLOT_CATEGORY}${threshold})`);
-    // prune all alerted dates — slots gone, reset so re-appearance triggers fresh alert
-    state.alerted_dates = [];
-  } else {
-    // prune alerted_dates: remove any date no longer in this round's results
-    // so if a slot disappears and comes back later, it alerts again
-    state.alerted_dates = state.alerted_dates.filter(d => qualifyingDates.includes(d));
+  for (const category of categoriesToCheck) {
+    const qualifyingDates = qualifyingDatesForCategory(category);
+    const label = category || '(all)';
+    const alerted = state.alerted_dates[category] ?? [];
 
-    const newDates = qualifyingDates.filter(d => !state.alerted_dates.includes(d));
-
-    if (newDates.length > 0) {
-      for (const date of newDates) {
-        logLine(`[kawasaki] ${ts} — SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date}`);
-      }
-      const slackText = newDates
-        .map(date => `[kawasaki] SLOT AVAILABLE: ${SLOT_CATEGORY} on ${date} — book now: ${TARGET_URL}`)
-        .join('\n');
-      const delivered = await sendSlackNotification(slackText);
-      if (delivered) state.alerted_dates.push(...newDates);
+    if (qualifyingDates.length === 0) {
+      const threshold = ALERT_BEFORE ? ` before ${ALERT_BEFORE}` : '';
+      logLine(`[kawasaki] ${ts} — no qualifying slots (${label}${threshold})`);
+      // reset — slots gone, re-appearance will trigger fresh alert
+      state.alerted_dates[category] = [];
     } else {
-      for (const date of qualifyingDates) {
-        logLine(`[kawasaki] ${ts} — slot open (already alerted): ${date}`);
+      // prune: remove alerted dates no longer in this round so they can re-alert if they return
+      const pruned = alerted.filter(d => qualifyingDates.includes(d));
+      const newDates = qualifyingDates.filter(d => !pruned.includes(d));
+
+      if (newDates.length > 0) {
+        for (const date of newDates) {
+          logLine(`[kawasaki] ${ts} — SLOT AVAILABLE: ${label} on ${date}`);
+        }
+        const slackText = newDates
+          .map(date => `[kawasaki] SLOT AVAILABLE: ${label} on ${date} — book now: ${TARGET_URL}`)
+          .join('\n');
+        const delivered = await sendSlackNotification(slackText);
+        state.alerted_dates[category] = delivered ? [...pruned, ...newDates] : pruned;
+      } else {
+        for (const date of qualifyingDates) {
+          logLine(`[kawasaki] ${ts} — slot open (already alerted): ${label} on ${date}`);
+        }
+        state.alerted_dates[category] = pruned;
       }
     }
   }
 
-  // Step 9 — Write state file
+  // Step 7 — Write state file
   state.last_check = ts;
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
