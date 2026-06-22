@@ -2,7 +2,7 @@ name: kawasaki-slot-checker
 
 on:
   repository_dispatch:
-      types: [check]
+    types: [check]
   workflow_dispatch: 
     inputs:
       slot_category:
@@ -16,6 +16,11 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    
+    # 核心改动：直接借用官方镜像，内部已经预装好所有运行环境
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-noble 
+
     permissions:
       contents: write
 
@@ -34,28 +39,9 @@ jobs:
       - name: Install dependencies
         run: npm ci            # D-16
 
-      - name: Cache Playwright Chromium
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        # 核心改动：阻止 Ubuntu 24.04 的服务重启检查挂起进程
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
-        run: npx playwright install chromium --with-deps
-
-      - name: Install Playwright system deps only
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        # 同样，单独装依赖时也加上，以防万一
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
-        run: npx playwright install-deps chromium
+      # =============================================================
+      #  原本的 Cache Playwright 和 Install Playwright 步骤已被安全删除
+      # =============================================================
 
       - name: Run slot checker
         env:
@@ -63,10 +49,11 @@ jobs:
           SLOT_CATEGORY: ${{ inputs.slot_category || github.event.client_payload.slot_category || '普通車ＡＭ,普通車ＰＭ' }}
           ALERT_BEFORE: ${{ inputs.alert_before || github.event.client_payload.alert_before || '' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: npm run check     # D-16; CHROME_PATH intentionally absent → empty default → no executablePath
+        run: npm run check     # 此时环境中已自带 Chromium，能直接秒开运行
 
       - name: Commit state
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ ! -f data/state.json ]; then
