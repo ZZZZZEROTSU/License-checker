@@ -53,6 +53,7 @@ jobs:
 
       - name: Commit state
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ ! -f data/state.json ]; then
