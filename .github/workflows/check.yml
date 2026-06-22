@@ -19,7 +19,7 @@ jobs:
     
     # 核心改动：直接借用官方镜像，内部已经预装好所有运行环境
     container:
-      image: mcr.microsoft.com/playwright:v1.49.0-noble # ⚠️如果你的 package.json 里的 playwright 版本不是 1.49，请改成对应的版本号
+      image: mcr.microsoft.com/playwright:v1.59.1-noble 
 
     permissions:
       contents: write
