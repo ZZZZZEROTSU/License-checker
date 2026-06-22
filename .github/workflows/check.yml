@@ -43,10 +43,16 @@ jobs:
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium --with-deps   # D-13
+        # 核心改动：阻止 Ubuntu 24.04 的服务重启检查挂起进程
+        env:
+          NEEDRESTART_MODE: l
+        run: npx playwright install chromium --with-deps
 
       - name: Install Playwright system deps only
         if: steps.playwright-cache.outputs.cache-hit == 'true'
+        # 同样，单独装依赖时也加上，以防万一
+        env:
+          NEEDRESTART_MODE: l
         run: npx playwright install-deps chromium
 
       - name: Run slot checker
